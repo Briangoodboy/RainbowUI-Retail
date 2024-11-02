@@ -1,5 +1,5 @@
-### Changes in 110000.122-Release:
+### Changes in 110000.124-Release:
 
-- Changed: Updated item database for cataclysm
-- Fixed: Localization not working
+- Fixed: Addon blocked error
+- Fixed: Error on login on cataclysm
 

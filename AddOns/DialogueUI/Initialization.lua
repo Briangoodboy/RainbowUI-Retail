@@ -1,5 +1,5 @@
-local VERSION_TEXT = "v0.4.7";
-local VERSION_DATE = 1729500000;
+local VERSION_TEXT = "v0.5.0";
+local VERSION_DATE = 1730300000;
 
 
 local addonName, addon = ...
@@ -16,8 +16,11 @@ local DefaultValues = {
     Theme = 1,
     FrameSize = 2,
     FontSizeBase = 3, -- 更改預設值
+    FontText = "default",
+    FontNumber = "default",
     FrameOrientation = 2,                       --1:Left  2:Right(Default)
     HideUI = true,
+        HideOutlineSparkles = true,
         HideUnitNames = false,
     ShowCopyTextButton = false,
     ShowNPCNameOnPage = false,
@@ -38,6 +41,7 @@ local DefaultValues = {
     PrimaryControlKey = 1,                      --1: Space  2:Interact Key
     ScrollDownThenAcceptQuest = false,
     RightClickToCloseUI = true,
+    CycleRewardHotkeyEnabled = false,           --Press Tab to cycle through choosable rewards
     EmulateSwipe = true,
     MobileDeviceMode = false,
 
@@ -56,7 +60,8 @@ local DefaultValues = {
     TTSEnabled = false,
         TTSUseHotkey = true,    --Default key R
         TTSAutoPlay = false,
-        TTSSkipRecent = false,  --Skip recently read texts
+            TTSSkipRecent = false,              --Skip recently read texts
+            TTSAutoPlayDelay = false,           --Add a delay before starting auto play in case the NPC is speaking
         TTSAutoStop = true,     --Stop when leaving
         TTSStopOnNew = true,    --Stop when reading new quest
         TTSVoiceMale = 0,       --0: System default

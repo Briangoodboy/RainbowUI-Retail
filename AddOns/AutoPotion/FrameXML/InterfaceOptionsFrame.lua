@@ -20,6 +20,19 @@ local positionx = 0
 local currentPrioTitle = nil
 local lastStaticElement = nil
 
+function ham.settingsFrame:updateConfig(option, value)
+	if ham.options[option] ~= nil then
+        ham.options[option] = value  -- Update in-memory
+        HAMDB[option] = value        -- Persist to DB
+    else
+        print("無效的選項: " .. tostring(option))
+    end
+	-- Rebuild the macro and update priority frame
+	ham.checkTinker()
+	ham.updateHeals()
+	ham.updateMacro()
+	self:updatePrio()
+end
 
 function ham.settingsFrame:OnEvent(event, addOnName)
 	if addOnName == "AutoPotion" then
@@ -42,11 +55,10 @@ end
 
 ham.settingsFrame:RegisterEvent("PLAYER_LOGIN")
 ham.settingsFrame:RegisterEvent("ADDON_LOADED")
-
 ham.settingsFrame:SetScript("OnEvent", ham.settingsFrame.OnEvent)
 
-function ham.settingsFrame:createPrioFrame(id, iconTexture, positionx, isSpell)
-	local icon = CreateFrame("Frame", nil, self.panel, UIParent)
+function ham.settingsFrame:createPrioFrame(id, iconTexture, positionx, isSpell, isTinker)
+	local icon = CreateFrame("Frame", nil, self.content, UIParent)
 	icon:SetFrameStrata("MEDIUM")
 	icon:SetWidth(ICON_SIZE)
 	icon:SetHeight(ICON_SIZE)
@@ -54,6 +66,8 @@ function ham.settingsFrame:createPrioFrame(id, iconTexture, positionx, isSpell)
 		GameTooltip:SetOwner(icon, "ANCHOR_TOPRIGHT")
 		if isSpell == true then
 			GameTooltip:SetSpellByID(id)
+		elseif isTinker then
+            GameTooltip:SetInventoryItem("player", id)
 		else
 			GameTooltip:SetItemByID(id)
 		end
@@ -89,6 +103,7 @@ function ham.settingsFrame:updatePrio()
 		frame:Hide()
 	end
 
+	-- Add spells to priority frames
 	if next(ham.spellIDs) ~= nil then
 		for i, id in ipairs(ham.spellIDs) do
 			local iconTexture, originalIconTexture
@@ -115,16 +130,34 @@ function ham.settingsFrame:updatePrio()
 				currentFrame.texture = currentTexture
 				currentFrame:Show()
 			else
-				self:createPrioFrame(id, iconTexture, positionx, true)
+				self:createPrioFrame(id, iconTexture, positionx, true, false)
 				positionx = positionx + (ICON_SIZE + (ICON_SIZE / 2))
 			end
 			spellCounter = spellCounter + 1
 		end
 	end
+
+	-- Add items to priority frames
 	if next(ham.itemIdList) ~= nil then
 		for i, id in ipairs(ham.itemIdList) do
-			local itemName, itemLink, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, iconTexture, sellPrice, classID, subclassID, bindType, expansionID, setID, isCraftingReagent =
-				C_Item.GetItemInfo(id)
+
+			local entry
+			local iconTexture
+			local isTinker = false
+
+			-- if the entry is a gear slot (ie: tinker)
+			if type(id) == "string" and id:match("^slot:") then
+				local slot = assert(tonumber(id:sub(6)), "Invalid slot number")
+				entry = GetInventoryItemID("player", slot)
+        		iconTexture = GetInventoryItemTexture("player", slot)
+				isTinker = true
+			-- otherwise its a normal item id
+			else
+				local _, _, _, _, _, _, _, _, _, tmpTexture = C_Item.GetItemInfo(id)
+				entry = id
+				iconTexture = tmpTexture
+			end
+
 			local currentFrame = prioFrames[i + spellCounter]
 			local currentTexture = prioTextures[i + spellCounter]
 
@@ -133,7 +166,11 @@ function ham.settingsFrame:updatePrio()
 				currentFrame:SetScript("OnLeave", nil)
 				currentFrame:HookScript("OnEnter", function(_, btn, down)
 					GameTooltip:SetOwner(currentFrame, "ANCHOR_TOPRIGHT")
-					GameTooltip:SetItemByID(id)
+					if isTinker then
+						GameTooltip:SetInventoryItem("player", ham.tinkerSlot)
+					else
+						GameTooltip:SetItemByID(id)
+					end
 					GameTooltip:Show()
 				end)
 				currentFrame:HookScript("OnLeave", function(_, btn, down)
@@ -144,7 +181,7 @@ function ham.settingsFrame:updatePrio()
 				currentFrame.texture = currentTexture
 				currentFrame:Show()
 			else
-				self:createPrioFrame(id, iconTexture, positionx, false)
+				self:createPrioFrame(entry, iconTexture, positionx, false, isTinker)
 				positionx = positionx + (ICON_SIZE + (ICON_SIZE / 2))
 			end
 			itemCounter = itemCounter + 1
@@ -153,62 +190,83 @@ function ham.settingsFrame:updatePrio()
 end
 
 function ham.settingsFrame:InitializeOptions()
+
+	-- Create the main panel inside the Interface Options container
 	self.panel = CreateFrame("Frame", addonName, InterfaceOptionsFramePanelContainer)
-	---@diagnostic disable-next-line: inject-field
 	self.panel.name = "一鍵吃糖"
-	if InterfaceOptions_AddCategory then
-		InterfaceOptions_AddCategory(self.panel)
-	else
-		local category = Settings.RegisterCanvasLayoutCategory(self.panel, self.panel.name);
-		Settings.RegisterAddOnCategory(category);
-		self.panel.categoryID = category:GetID() -- for OpenToCategory use
-	end
 
+	-- Register with Interface Options
+    if InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(self.panel)
+    else
+        local category = Settings.RegisterCanvasLayoutCategory(self.panel, "一鍵吃糖")
+        Settings.RegisterAddOnCategory(category)
+        self.panel.categoryID = category:GetID() -- for OpenToCategory use
+    end
 
-	-------------  HEADER  -------------
-	local title = self.panel:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
-	title:SetPoint("TOP", 0, -2)
-	title:SetText("一鍵吃糖/喝紅水")
+	-- inset frame to provide some padding
+	self.content = CreateFrame("Frame", nil, self.panel)
+	self.content:SetPoint("TOPLEFT", self.panel, "TOPLEFT", 16, -16)
+	self.content:SetPoint("BOTTOMRIGHT", self.panel, "BOTTOMRIGHT", -16, 16)
 
-	local subtitle = self.panel:CreateFontString("ARTWORK", nil, "GameFontNormal")
-	subtitle:SetPoint("TOPLEFT", 0, -PADDING)
-	subtitle:SetText("這裡可以調整插件的功能，例如也能使用職業法術。")
+	-- title
+    local title = self.content:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
+    title:SetPoint("TOP", 0, 0)
+    title:SetText("一鍵吃糖/喝紅水")
 
+    -- subtitle
+    local subtitle = self.content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    subtitle:SetPoint("TOPLEFT", 0, -40)
+    subtitle:SetText("這裡可以調整插件的功能，例如也能使用職業法術。")
 
-	-------------  General  -------------
-	local behaviourTitle = self.panel:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
-	behaviourTitle:SetPoint("TOPLEFT", subtitle, 0, -PADDING_CATERGORY)
-	behaviourTitle:SetText("插件功能")
+    -- behavior title
+    local behaviourTitle = self.content:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
+    behaviourTitle:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -30)
+    behaviourTitle:SetText("插件功能")
 
-	local cdResetButton = CreateFrame("CheckButton", nil, self.panel, "InterfaceOptionsCheckButtonTemplate")
-	cdResetButton:SetPoint("TOPLEFT", behaviourTitle, 0, -PADDING)
+	-------------  Stop Casting  -------------	
+	local stopCastButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
+	stopCastButton:SetPoint("TOPLEFT", behaviourTitle, 0, -PADDING)
 	---@diagnostic disable-next-line: undefined-field
-	cdResetButton.Text:SetText(
-		"連續施放的重置條件使用最短的冷卻時間。!!請謹慎使用!!")
+	stopCastButton.Text:SetText("巨集中包含 /stopcasting")
+	stopCastButton:HookScript("OnClick", function(_, btn, down)
+		ham.settingsFrame:updateConfig("stopCast", stopCastButton:GetChecked())
+	end)
+	stopCastButton:HookScript("OnEnter", function(_, btn, down)
+		---@diagnostic disable-next-line: param-type-mismatch
+		GameTooltip:SetOwner(stopCastButton, "ANCHOR_TOPRIGHT")
+		GameTooltip:SetText("Useful for casters.")
+		GameTooltip:Show()
+	end)
+	stopCastButton:HookScript("OnLeave", function(_, btn, down)
+		GameTooltip:Hide()
+	end)
+	stopCastButton:SetChecked(HAMDB.stopCast)
+	lastStaticElement = stopCastButton
+
+	-------------  Shortest Cooldown  -------------	
+	local cdResetButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
+	cdResetButton:SetPoint("TOPLEFT", lastStaticElement, 0, -PADDING)
+	---@diagnostic disable-next-line: undefined-field
+	cdResetButton.Text:SetText("連續施放的重置條件使用最短的冷卻時間。!!請謹慎使用!!")
 	cdResetButton:HookScript("OnClick", function(_, btn, down)
-		HAMDB.cdReset = cdResetButton:GetChecked()
+		ham.settingsFrame:updateConfig("cdReset", cdResetButton:GetChecked())
 	end)
 	cdResetButton:SetChecked(HAMDB.cdReset)
-
 	lastStaticElement = cdResetButton
 
-
-	-------------  Healthstone button  -------------	
-	local raidStoneButton = CreateFrame("CheckButton", nil, self.panel, "InterfaceOptionsCheckButtonTemplate")
+	-------------  Healthstone Priority  -------------	
+	local raidStoneButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
 	raidStoneButton:SetPoint("TOPLEFT", lastStaticElement, 0, -PADDING)
 	---@diagnostic disable-next-line: undefined-field
-	raidStoneButton.Text:SetText("治療石的優先順序較低 (只在副本)")
+	raidStoneButton.Text:SetText("治療石的優先順序較低")
 	raidStoneButton:HookScript("OnClick", function(_, btn, down)
-		HAMDB.raidStone = raidStoneButton:GetChecked()
-		ham.updateHeals()
-		ham.updateMacro()
-		self:updatePrio()
+		ham.settingsFrame:updateConfig("raidStone", raidStoneButton:GetChecked())
 	end)
 	raidStoneButton:HookScript("OnEnter", function(_, btn, down)
 		---@diagnostic disable-next-line: param-type-mismatch
 		GameTooltip:SetOwner(raidStoneButton, "ANCHOR_TOPRIGHT")
-		GameTooltip:SetText(
-			"在副本中時治療藥水會比治療石優先使用")
+		GameTooltip:SetText("治療藥水會比治療石優先使用")
 		GameTooltip:Show()
 	end)
 	raidStoneButton:HookScript("OnLeave", function(_, btn, down)
@@ -222,21 +280,19 @@ function ham.settingsFrame:InitializeOptions()
 	local witheringPotionButton = nil
 	local witheringDreamsPotionButton = nil
 	local cavedwellerDelightButton = nil
+	local heartseekingButton = nil
 	if isRetail then
-		local itemsTitle = self.panel:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
+		local itemsTitle = self.content:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
 		itemsTitle:SetPoint("TOPLEFT", lastStaticElement, 0, -PADDING_CATERGORY)
 		itemsTitle:SetText("物品")
 
 		---Withering Potion---
-		witheringPotionButton = CreateFrame("CheckButton", nil, self.panel, "InterfaceOptionsCheckButtonTemplate")
+		witheringPotionButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
 		witheringPotionButton:SetPoint("TOPLEFT", itemsTitle, 0, -PADDING)
 		---@diagnostic disable-next-line: undefined-field
 		witheringPotionButton.Text:SetText("凋萎活力藥水")
 		witheringPotionButton:HookScript("OnClick", function(_, btn, down)
-			HAMDB.witheringPotion = witheringPotionButton:GetChecked()
-			ham.updateHeals()
-			ham.updateMacro()
-			self:updatePrio()
+			ham.settingsFrame:updateConfig("witheringPotion", witheringPotionButton:GetChecked())
 		end)
 		witheringPotionButton:HookScript("OnEnter", function(_, btn, down)
 			---@diagnostic disable-next-line: param-type-mismatch
@@ -250,16 +306,12 @@ function ham.settingsFrame:InitializeOptions()
 		witheringPotionButton:SetChecked(HAMDB.witheringPotion)
 
 		---Withering Dreams Potion---
-		witheringDreamsPotionButton = CreateFrame("CheckButton", nil, self.panel,
-			"InterfaceOptionsCheckButtonTemplate")
+		witheringDreamsPotionButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
 		witheringDreamsPotionButton:SetPoint("TOPLEFT", itemsTitle, 220, -PADDING)
 		---@diagnostic disable-next-line: undefined-field
 		witheringDreamsPotionButton.Text:SetText("枯萎夢境藥水")
 		witheringDreamsPotionButton:HookScript("OnClick", function(_, btn, down)
-			HAMDB.witheringDreamsPotion = witheringDreamsPotionButton:GetChecked()
-			ham.updateHeals()
-			ham.updateMacro()
-			self:updatePrio()
+			ham.settingsFrame:updateConfig("witheringDreamsPotion", witheringDreamsPotionButton:GetChecked())
 		end)
 		witheringDreamsPotionButton:HookScript("OnEnter", function(_, btn, down)
 			---@diagnostic disable-next-line: param-type-mismatch
@@ -272,17 +324,13 @@ function ham.settingsFrame:InitializeOptions()
 		end)
 		witheringDreamsPotionButton:SetChecked(HAMDB.witheringDreamsPotion)
 
-		---Cavedwellers Deligth---
-		cavedwellerDelightButton = CreateFrame("CheckButton", nil, self.panel,
-			"InterfaceOptionsCheckButtonTemplate")
+		---Cavedwellers Delight---
+		cavedwellerDelightButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
 		cavedwellerDelightButton:SetPoint("TOPLEFT", itemsTitle, 440, -PADDING)
 		---@diagnostic disable-next-line: undefined-field
 		cavedwellerDelightButton.Text:SetText("穴居者之喜")
 		cavedwellerDelightButton:HookScript("OnClick", function(_, btn, down)
-			HAMDB.cavedwellerDelight = cavedwellerDelightButton:GetChecked()
-			ham.updateHeals()
-			ham.updateMacro()
-			self:updatePrio()
+			ham.settingsFrame:updateConfig("cavedwellerDelight", cavedwellerDelightButton:GetChecked())
 		end)
 		cavedwellerDelightButton:HookScript("OnEnter", function(_, btn, down)
 			---@diagnostic disable-next-line: param-type-mismatch
@@ -295,19 +343,39 @@ function ham.settingsFrame:InitializeOptions()
 		end)
 		cavedwellerDelightButton:SetChecked(HAMDB.cavedwellerDelight)
 
+		---Heartseeking Health Injector---
+		heartseekingButton = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
+		heartseekingButton:SetPoint("TOPLEFT", itemsTitle, 0, -60)
+		---@diagnostic disable-next-line: undefined-field
+		heartseekingButton.Text:SetText("覓心生命注射器 (技工裝置)")
+		heartseekingButton:HookScript("OnClick", function(_, btn, down)
+			ham.settingsFrame:updateConfig("heartseekingInjector", heartseekingButton:GetChecked())
+		end)
+		heartseekingButton:HookScript("OnEnter", function(_, btn, down)
+			---@diagnostic disable-next-line: param-type-mismatch
+			if ham.tinkerSlot then
+				GameTooltip:SetOwner(heartseekingButton, "ANCHOR_TOPRIGHT")
+				GameTooltip:SetInventoryItem("player", ham.tinkerSlot)
+				GameTooltip:Show()
+			end
+		end)
+		heartseekingButton:HookScript("OnLeave", function(_, btn, down)
+			GameTooltip:Hide()
+		end)
+		heartseekingButton:SetChecked(HAMDB.heartseekingInjector)
 
-		lastStaticElement = witheringPotionButton ---MAYBE witheringDreamsPotionButton
+		lastStaticElement = heartseekingButton
 	end
 
 
 	-------------  CURRENT PRIORITY  -------------
-	currentPrioTitle = self.panel:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
+	currentPrioTitle = self.content:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
 	currentPrioTitle:SetPoint("BOTTOMLEFT", 0, PADDING_PRIO_CATEGORY)
 	currentPrioTitle:SetText("目前的優先順序")
 
 
 	-------------  RESET BUTTON  -------------
-	local btn = CreateFrame("Button", nil, self.panel, "UIPanelButtonTemplate")
+	local btn = CreateFrame("Button", nil, self.content, "UIPanelButtonTemplate")
 	btn:SetPoint("BOTTOMLEFT", 2, 3)
 	btn:SetText("重置為預設值")
 	btn:SetWidth(120)
@@ -337,7 +405,7 @@ end
 
 function ham.settingsFrame:InitializeClassSpells(relativeTo)
 	-------------  CLASS / RACIALS  -------------
-	local myClassTitle = self.panel:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
+	local myClassTitle = self.content:CreateFontString("ARTWORK", nil, "GameFontNormalHuge")
 	myClassTitle:SetPoint("TOPLEFT", relativeTo, 0, -PADDING_CATERGORY)
 	myClassTitle:SetText("職業/種族技能")
 
@@ -348,7 +416,7 @@ function ham.settingsFrame:InitializeClassSpells(relativeTo)
 		for i, spell in ipairs(ham.supportedSpells) do
 			if IsSpellKnown(spell) then
 				local name = C_Spell.GetSpellName(spell)
-				local button = CreateFrame("CheckButton", nil, self.panel, "InterfaceOptionsCheckButtonTemplate")
+				local button = CreateFrame("CheckButton", nil, self.content, "InterfaceOptionsCheckButtonTemplate")
 
 				if count == 3 then
 					lastbutton = nil
@@ -396,10 +464,19 @@ SLASH_HAM3 = "/ap"
 SLASH_HAM4 = "/autopotion"
 
 SlashCmdList.HAM = function(msg, editBox)
-	if InterfaceOptions_AddCategory then
-		InterfaceOptionsFrame_OpenToCategory("一鍵吃糖")
-	else
-		local settingsCategoryID = _G[addonName].categoryID
-		Settings.OpenToCategory(settingsCategoryID)
-	end
+    -- Check if the message contains "debug"
+    if msg and msg:trim():lower() == "debug" then
+        ham.debug = not ham.debug
+		ham.checkTinker()
+        print("|cffb48ef9AutoPotion:|r Debug mode is now " .. (ham.debug and "enabled" or "disabled"))
+        return
+    end
+
+    -- Open settings if no "debug" keyword was passed
+    if InterfaceOptions_AddCategory then
+        InterfaceOptionsFrame_OpenToCategory("一鍵吃糖")
+    else
+        local settingsCategoryID = _G[addonName].categoryID
+        Settings.OpenToCategory(settingsCategoryID)
+    end
 end

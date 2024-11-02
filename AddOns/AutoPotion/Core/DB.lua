@@ -1,10 +1,12 @@
 local addonName, ham = ...
 ham.defaults = {
     cdReset = false,
+    stopCast = false,
     raidStone = false,
     witheringPotion = false,
     witheringDreamsPotion = false,
     cavedwellerDelight = true,
+    heartseekingInjector = false,
     activatedSpells = { ham.crimsonVialSpell, ham.renewal, ham.exhilaration, ham.fortitudeOfTheBear, ham.bitterImmunity,
         ham.desperatePrayer, ham.healingElixir, ham.giftOfTheNaaruDK, ham.giftOfTheNaaruHunter, ham.giftOfTheNaaruMage,
         ham.giftOfTheNaaruMageWarlock, ham.giftOfTheNaaruMonk, ham.giftOfTheNaaruPaladin, ham.giftOfTheNaaruPriest, ham
